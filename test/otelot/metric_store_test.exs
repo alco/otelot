@@ -270,4 +270,103 @@ defmodule Otelot.MetricStoreTest do
       assert MetricStore.get_metrics(@name, 1) == %{}
     end
   end
+
+  describe "generations" do
+    @other_name :metric_store_test_other
+
+    setup %{store_config: config} do
+      # Exports are triggered explicitly in these tests
+      {:ok, store_config: %{config | export_period: :timer.minutes(10)}}
+    end
+
+    defp start_store(config, name) do
+      start_supervised!(Supervisor.child_spec({MetricStore, %{config | name: name}}, id: name))
+    end
+
+    defp expect_exports(bypass) do
+      test_pid = self()
+
+      Bypass.expect(bypass, "POST", "/v1/metrics", fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        send(test_pid, {:exported, ExportMetricsServiceRequest.decode(body)})
+        Plug.Conn.resp(conn, 200, "")
+      end)
+    end
+
+    defp exported_sum_values(request) do
+      for %{scope_metrics: scope_metrics} <- request.resource_metrics,
+          %{metrics: metrics} <- scope_metrics,
+          %{data: {:sum, %{data_points: points}}} <- metrics,
+          %{value: {:as_int, value}} <- points,
+          reduce: 0 do
+        acc -> acc + value
+      end
+    end
+
+    defp collect_exported_sum(acc \\ 0) do
+      receive do
+        {:exported, request} -> collect_exported_sum(acc + exported_sum_values(request))
+      after
+        0 -> acc
+      end
+    end
+
+    test "rotating one store does not affect another", %{bypass: bypass, store_config: config} do
+      metric = Metrics.sum("test.sum")
+      tags = %{test: "value"}
+      config = %{config | metrics: [metric]}
+
+      start_store(config, @name)
+      start_store(config, @other_name)
+
+      MetricStore.write_metric(@name, metric, 1, tags)
+      MetricStore.write_metric(@other_name, metric, 5, tags)
+
+      expect_exports(bypass)
+
+      assert :ok = MetricStore.export_sync(@name)
+      assert_received {:exported, request}
+      assert exported_sum_values(request) == 1
+
+      assert MetricStore.get_metrics(@name) == %{}
+
+      # The other store keeps its data and is still writing into its first generation
+      MetricStore.write_metric(@other_name, metric, 2, tags)
+      assert %{{:sum, "test.sum"} => %{^tags => 7}} = MetricStore.get_metrics(@other_name, 0)
+
+      # Stopping and restarting the first store leaves the other one intact
+      :ok = stop_supervised(@name)
+      start_store(config, @name)
+
+      MetricStore.write_metric(@name, metric, 3, tags)
+      assert %{{:sum, "test.sum"} => %{^tags => 3}} = MetricStore.get_metrics(@name, 0)
+      assert %{{:sum, "test.sum"} => %{^tags => 7}} = MetricStore.get_metrics(@other_name, 0)
+
+      assert :ok = MetricStore.export_sync(@other_name)
+      assert_received {:exported, request}
+      assert exported_sum_values(request) == 7
+    end
+
+    test "does not write to persistent_term on export", %{bypass: bypass, store_config: config} do
+      metric = Metrics.sum("test.sum")
+      store = start_store(%{config | metrics: [metric]}, @name)
+
+      expect_exports(bypass)
+
+      traced = [{:persistent_term, :put, 2}, {:persistent_term, :erase, 1}]
+      for mfa <- traced, do: :erlang.trace_pattern(mfa, true, [:global])
+      :erlang.trace(store, true, [:call, {:tracer, self()}])
+
+      on_exit(fn -> for mfa <- traced, do: :erlang.trace_pattern(mfa, false, [:global]) end)
+
+      for i <- 1..3 do
+        MetricStore.write_metric(@name, metric, i, %{})
+        assert :ok = MetricStore.export_sync(@name)
+      end
+
+      refute_received {:trace, ^store, :call, {:persistent_term, _, _}}
+
+      assert collect_exported_sum() == 6
+    end
+  end
 end

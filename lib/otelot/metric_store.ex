@@ -22,9 +22,26 @@ defmodule Otelot.MetricStore do
 
   @default_buckets [0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000]
 
+  # The current generation lives in a per-store `:atomics` array whose reference is kept in a
+  # single row of the store's own metrics table. Nothing is written to `:persistent_term`, so
+  # exports do not trigger global `persistent_term` updates, and stores do not interfere with
+  # each other.
+  #
+  # The key is an atom, so this row never matches the `{generation, ...}` patterns of metric rows
+  @counters_key :"$otelot_generation_counters"
+  @generation_ix 1
+
   defmodule State do
     @moduledoc false
-    defstruct [:config, :api, :metrics, :metrics_table, :last_export, :generations_table]
+    defstruct [
+      :config,
+      :api,
+      :metrics,
+      :metrics_table,
+      :last_export,
+      :generations_table,
+      :counters
+    ]
 
     @type t :: %__MODULE__{
             config: map(),
@@ -32,6 +49,7 @@ defmodule Otelot.MetricStore do
             metrics: list(),
             metrics_table: atom(),
             generations_table: :ets.tid(),
+            counters: :atomics.atomics_ref(),
             last_export: nil | DateTime.t()
           }
   end
@@ -44,7 +62,7 @@ defmodule Otelot.MetricStore do
   end
 
   def get_metrics(metrics_table, generation \\ nil) do
-    generation = generation || :persistent_term.get(generation_key(metrics_table))
+    generation = generation || current_generation(metrics_table)
 
     :ets.match_object(metrics_table, {{generation, :_, :_, :_, :_}, :_, :_})
     |> Enum.reduce(%{}, fn
@@ -67,6 +85,12 @@ defmodule Otelot.MetricStore do
     end)
   end
 
+  defp current_generation(metrics_table) do
+    metrics_table
+    |> :ets.lookup_element(@counters_key, 2)
+    |> :atomics.get(@generation_ix)
+  end
+
   def export_sync(name) do
     GenServer.call(name, :export_sync, :infinity)
   end
@@ -79,29 +103,44 @@ defmodule Otelot.MetricStore do
   def write_metric(metrics_table, metric, value, tags),
     do: write_metric(metrics_table, metric, Enum.join(metric.name, "."), value, tags)
 
-  def write_metric(metrics_table, %Metrics.Counter{} = metric, string_name, _, tags) do
-    generation = :persistent_term.get(generation_key(metrics_table))
+  def write_metric(metrics_table, metric, string_name, value, tags) do
+    generation = current_generation(metrics_table)
+    write_metric(metrics_table, generation, metric, string_name, value, tags)
+  end
+
+  defp write_metric(metrics_table, generation, %Metrics.Counter{} = metric, string_name, _, tags) do
     ets_key = {generation, string_name, metric_type(metric), tags, nil}
 
     :ets.update_counter(metrics_table, ets_key, 1, {ets_key, 0, nil})
   end
 
-  def write_metric(metrics_table, %Metrics.Sum{} = metric, string_name, value, tags) do
-    generation = :persistent_term.get(generation_key(metrics_table))
+  defp write_metric(metrics_table, generation, %Metrics.Sum{} = metric, string_name, value, tags) do
     ets_key = {generation, string_name, metric_type(metric), tags, nil}
 
     :ets.update_counter(metrics_table, ets_key, value, {ets_key, 0, nil})
   end
 
-  def write_metric(metrics_table, %Metrics.LastValue{} = metric, string_name, value, tags) do
-    generation = :persistent_term.get(generation_key(metrics_table))
+  defp write_metric(
+         metrics_table,
+         generation,
+         %Metrics.LastValue{} = metric,
+         string_name,
+         value,
+         tags
+       ) do
     ets_key = {generation, string_name, metric_type(metric), tags, nil}
     :ets.update_element(metrics_table, ets_key, {2, value}, {ets_key, value, nil})
   end
 
-  def write_metric(metrics_table, %Metrics.Distribution{} = metric, string_name, value, tags) do
+  defp write_metric(
+         metrics_table,
+         generation,
+         %Metrics.Distribution{} = metric,
+         string_name,
+         value,
+         tags
+       ) do
     bucket = find_bucket(metric, value)
-    generation = :persistent_term.get(generation_key(metrics_table))
     ets_key = {generation, string_name, metric_type(metric), tags, bucket}
     update_counter_op = {2, 1}
     update_sum_op = {3, round(value)}
@@ -169,9 +208,11 @@ defmodule Otelot.MetricStore do
     # Create ETS table for metrics
     :ets.new(metrics_table, [:ordered_set, :public, :named_table, {:write_concurrency, true}])
 
+    counters = :atomics.new(1, signed: false)
+    :ets.insert(metrics_table, {@counters_key, counters, nil})
+
     generations_table = :ets.new(:generations, [:ordered_set, :private])
     :ets.insert(generations_table, {0, System.system_time(:nanosecond), 0})
-    :persistent_term.put(generation_key(metrics_table), 0)
 
     with {:ok, api, config} <- OtelApi.new(Map.put(config, :finch, finch_pool), :metrics) do
       {:ok,
@@ -180,7 +221,8 @@ defmodule Otelot.MetricStore do
          api: api,
          metrics: metrics,
          metrics_table: metrics_table,
-         generations_table: generations_table
+         generations_table: generations_table,
+         counters: counters
        }}
     end
   end
@@ -208,9 +250,8 @@ defmodule Otelot.MetricStore do
     {:noreply, state}
   end
 
-  defp rotate_generation(%State{} = state) do
-    current_gen = :persistent_term.get(generation_key(state.metrics_table))
-    :persistent_term.put(generation_key(state.metrics_table), current_gen + 1)
+  defp rotate_generation(%State{counters: counters} = state) do
+    current_gen = :atomics.add_get(counters, @generation_ix, 1) - 1
 
     :ets.update_element(
       state.generations_table,
@@ -404,8 +445,4 @@ defmodule Otelot.MetricStore do
   defp convert_value(bigint_or_float, _preferred_type)
        when is_integer(bigint_or_float) or is_float(bigint_or_float),
        do: {:as_double, bigint_or_float / 1}
-
-  defp generation_key(metrics_table) do
-    {__MODULE__, metrics_table, :generation}
-  end
 end

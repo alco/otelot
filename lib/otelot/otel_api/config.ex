@@ -40,7 +40,10 @@ defmodule Otelot.OtelApi.Config do
       otlp_timeout: [
         type: :pos_integer,
         default: 10_000,
-        doc: "Timeout for OTLP requests."
+        doc:
+          "Maximum time in milliseconds to spend exporting one batch of data, including retries. " <>
+            "Each HTTP request is bounded by the time remaining, and no retry is attempted " <>
+            "once the backoff delay would exceed it."
       ]
     ]
 

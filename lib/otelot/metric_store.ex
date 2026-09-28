@@ -21,6 +21,8 @@ defmodule Otelot.MetricStore do
   import Otelot.OtlpUtils, only: [build_kv: 1]
 
   @default_buckets [0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000]
+  # Extra time given to the export task on top of `otlp_timeout`
+  @export_task_grace_period 1_000
 
   defmodule State do
     @moduledoc false
@@ -251,7 +253,12 @@ defmodule Otelot.MetricStore do
     |> then(fn payload ->
       task = Task.async(fn -> OtelApi.send_metrics(state.api, payload) end)
 
-      case Task.yield(task, 20_000) || Task.shutdown(task) do
+      # The request itself is bounded by `otlp_timeout`; the grace period only
+      # guards against the task getting stuck elsewhere (e.g. waiting for a
+      # connection from the pool).
+      timeout = state.api.config.otlp_timeout + @export_task_grace_period
+
+      case Task.yield(task, timeout) || Task.shutdown(task) do
         {:ok, result} -> result
         {:exit, reason} -> {:error, reason}
         nil -> {:error, :timeout}

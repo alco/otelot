@@ -322,11 +322,14 @@ defmodule Otelot.MetricStore do
   defp convert_data(%Metrics.LastValue{}, values) do
     {:gauge,
      %Gauge{
+       # A gauge value is a level, not an accumulation over the export
+       # window, so its data points carry no start time. Setting one makes
+       # backends treat each point as a self-contained delta and
+       # over-count it in rate/increase functions.
        data_points:
-         Enum.map(values, fn {{from, to}, tags, value} ->
+         Enum.map(values, fn {{_from, to}, tags, value} ->
            %NumberDataPoint{
              attributes: build_kv(tags),
-             start_time_unix_nano: from,
              time_unix_nano: to,
              value: convert_value(value, :double)
            }

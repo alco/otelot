@@ -241,6 +241,35 @@ defmodule Otelot.MetricStoreTest do
       end
     end
 
+    test "exports last_value data points as gauges without a start time", %{
+      bypass: bypass,
+      store_config: config
+    } do
+      metric = Metrics.last_value("test.last_value")
+      tags = %{test: "value"}
+      start_supervised!({MetricStore, %{config | metrics: [metric]}})
+
+      Passby.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
+        body = conn.req_body
+        decoded = ExportMetricsServiceRequest.decode(body)
+
+        assert [%{scope_metrics: [%{metrics: [exported]}]}] = decoded.resource_metrics
+        assert {:gauge, %{data_points: [point]}} = exported.data
+        assert {:as_double, 42.5} = point.value
+
+        # A gauge value is a level, not an accumulation over a window, so it
+        # must not carry a start time.
+        assert point.start_time_unix_nano == 0
+        assert point.time_unix_nano > 0
+
+        Passby.resp(conn, 200, "")
+      end)
+
+      MetricStore.write_metric(@name, metric, 42.5, tags)
+
+      assert :ok = MetricStore.export_sync(@name)
+    end
+
     test "handles server errors gracefully", %{bypass: bypass, store_config: config} do
       metric = Metrics.sum("test.sum")
       tags = %{test: "value"}

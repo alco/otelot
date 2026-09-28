@@ -62,8 +62,9 @@ bucket. Without `:buckets`, the default boundaries are
 ## Export cycle
 
 Every `export_period` milliseconds the exporter sends everything recorded since the last
-**successful** export as a single OTLP request. Each data point carries the start and end
-time of the window it covers.
+**successful** export as a single OTLP request. Sum and histogram data points carry the start
+and end time of the window they cover. Gauge data points carry only the time of the export:
+a gauge value is a level, not an accumulation over a window, so it has no start time.
 
 * On success, the exported values are dropped from memory and aggregation starts from zero.
 * On failure, the values are kept and included in the next export attempt, so a temporarily

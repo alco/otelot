@@ -311,6 +311,16 @@ defmodule Otelot.MetricStoreTest do
       end
     end
 
+    defp export_until_stopped do
+      :ok = MetricStore.export_sync(@name)
+
+      receive do
+        :stop -> :ok
+      after
+        0 -> export_until_stopped()
+      end
+    end
+
     test "rotating one store does not affect another", %{bypass: bypass, store_config: config} do
       metric = Metrics.sum("test.sum")
       tags = %{test: "value"}
@@ -367,6 +377,87 @@ defmodule Otelot.MetricStoreTest do
       refute_received {:trace, ^store, :call, {:persistent_term, _, _}}
 
       assert collect_exported_sum() == 6
+    end
+
+    test "concurrent writers never lose data to a rotating generation", %{
+      bypass: bypass,
+      store_config: config
+    } do
+      metric = Metrics.counter("test.counter")
+      start_store(%{config | metrics: [metric]}, @name)
+
+      expect_exports(bypass)
+
+      writers = 8
+      writes_per_writer = 20_000
+
+      exporter = Task.async(fn -> export_until_stopped() end)
+
+      tasks =
+        for w <- 1..writers do
+          Task.async(fn ->
+            for _ <- 1..writes_per_writer do
+              MetricStore.write_metric(@name, metric, 1, %{writer: w})
+            end
+          end)
+        end
+
+      Task.await_many(tasks, 60_000)
+      send(exporter.pid, :stop)
+      Task.await(exporter, 60_000)
+
+      # Final export picks up whatever was written after the last concurrent export
+      assert :ok = MetricStore.export_sync(@name)
+
+      assert collect_exported_sum() == writers * writes_per_writer
+
+      # No metric rows are left behind in drained generations
+      assert :ets.select_count(@name, [{{{:_, :_, :_, :_, :_}, :_, :_}, [], [true]}]) == 0
+    end
+
+    test "an export waits for a writer that entered the generation being drained", %{
+      bypass: bypass,
+      store_config: config
+    } do
+      metric = Metrics.sum("test.sum")
+      tags = %{test: "value"}
+      start_store(%{config | metrics: [metric]}, @name)
+
+      expect_exports(bypass)
+
+      test_pid = self()
+
+      # A writer that has picked a generation but has not inserted anything yet
+      writer =
+        Task.async(fn ->
+          MetricStore.in_generation(@name, fn generation ->
+            send(test_pid, {:entered, generation})
+            assert_receive :resume, 5_000
+            key = {generation, "test.sum", :sum, tags, nil}
+            :ets.update_counter(@name, key, 42, {key, 0, nil})
+          end)
+        end)
+
+      assert_receive {:entered, 0}
+
+      exporter = Task.async(fn -> MetricStore.export_sync(@name) end)
+
+      # The export does not drain the generation while the writer is still in it
+      refute Task.yield(exporter, 200)
+
+      # New writes already go to the next generation
+      MetricStore.write_metric(@name, metric, 1, tags)
+      assert %{{:sum, "test.sum"} => %{^tags => 1}} = MetricStore.get_metrics(@name, 1)
+
+      send(writer.pid, :resume)
+      Task.await(writer)
+
+      assert :ok = Task.await(exporter)
+      assert_received {:exported, request}
+      assert exported_sum_values(request) == 42
+
+      assert MetricStore.get_metrics(@name, 0) == %{}
+      assert %{{:sum, "test.sum"} => %{^tags => 1}} = MetricStore.get_metrics(@name)
     end
   end
 end

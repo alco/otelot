@@ -22,6 +22,11 @@ new name. Entries below this one describe releases of `otel_metric_exporter`.
 - The default `:name` of a metric exporter is now `:otelot`.
 - Exported data now reports `otelot` as its instrumentation scope name.
 
+### Fixed
+
+- Boolean attribute values (tags, log metadata, resource attributes) are exported as OTLP
+  booleans instead of the strings `"true"`/`"false"`.
+
 ### Documentation
 
 - New guides: Getting started, Metrics, Configuration.

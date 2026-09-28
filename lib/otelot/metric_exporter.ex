@@ -134,14 +134,10 @@ defmodule Otelot.MetricExporter do
         handler_id: handler_id
       }) do
     for metric <- metrics do
-      if is_nil(metric.keep) || metric.keep.(metadata) do
-        value = extract_measurement(metric, measurements, metadata)
-        tags = extract_tags(metric, metadata)
-
-        metric_name = "#{Enum.join(metric.name, ".")}"
-        MetricStore.write_metric(name, metric, metric_name, value, tags)
-      end
+      record_metric(name, metric, measurements, metadata)
     end
+
+    :ok
   rescue
     e in ArgumentError ->
       if MetricStore.table_exists?(name) do
@@ -151,6 +147,52 @@ defmodule Otelot.MetricExporter do
       Logger.warning("Otelot.MetricExporter failed to process event due to ETS table missing")
       :telemetry.detach(handler_id)
       :ok
+  end
+
+  # Records a single metric. A metric that can't be recorded is skipped with a warning (logged
+  # once per exporter, metric and kind of failure) instead of raising: `:telemetry` detaches a
+  # handler that raises, which would stop recording every metric attached to the same event.
+  defp record_metric(name, metric, measurements, metadata) do
+    if is_nil(metric.keep) || metric.keep.(metadata) do
+      value = extract_measurement(metric, measurements, metadata)
+
+      if valid_value?(metric, value) do
+        tags = extract_tags(metric, metadata)
+        metric_name = "#{Enum.join(metric.name, ".")}"
+        MetricStore.write_metric(name, metric, metric_name, value, tags)
+      else
+        warn_once(name, metric, :invalid_value, fn metric_name ->
+          "Otelot.MetricExporter skipped an invalid measurement for metric #{metric_name}: " <>
+            "expected a number, got #{inspect(value)}. Further invalid measurements for " <>
+            "this metric will be skipped silently."
+        end)
+      end
+    end
+  rescue
+    e ->
+      # Without the ETS table nothing can be recorded; let `handle_metric/4` detach the handler.
+      stacktrace = __STACKTRACE__
+      if not MetricStore.table_exists?(name), do: reraise(e, stacktrace)
+
+      warn_once(name, metric, {:exception, e.__struct__}, fn metric_name ->
+        "Otelot.MetricExporter failed to record metric #{metric_name}: " <>
+          Exception.format(:error, e, stacktrace) <>
+          "\nFurther failures of this kind for this metric will be skipped silently."
+      end)
+  end
+
+  # Counters count events and ignore the measurement value.
+  defp valid_value?(%Metrics.Counter{}, _value), do: true
+  defp valid_value?(_metric, value), do: is_number(value)
+
+  defp warn_once(name, metric, kind, message_fun) do
+    metric_name = Enum.join(metric.name, ".")
+
+    if MetricStore.first_warning?(name, {metric_name, metric.__struct__, kind}) do
+      Logger.warning(fn -> message_fun.(metric_name) end)
+    end
+
+    :ok
   end
 
   defp extract_measurement(metric, measurements, metadata) do

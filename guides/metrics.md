@@ -44,6 +44,16 @@ produces its own data point — keep tag cardinality under control.
 
 The `:keep` and `:drop` options work as documented in `Telemetry.Metrics`.
 
+### Missing and invalid measurements
+
+A `sum/2`, `last_value/2` or `distribution/2` metric needs a numeric measurement. If an event
+lacks it, or its value is `nil` or not a number, the exporter skips that metric for that event
+and records the event's other metrics as usual. The first time this happens for a metric, a
+warning is logged; later occurrences are skipped silently until the exporter restarts. A metric
+that fails to record for another reason (for example, a `:measurement` function that raises)
+is handled the same way, so one broken metric never stops the others attached to the same
+event.
+
 ### Histogram buckets
 
 Bucket boundaries for a distribution are set via `reporter_options`:

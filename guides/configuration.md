@@ -29,9 +29,19 @@ The complete, generated reference lives in the `Otelot.MetricExporter` and
 ## Per-signal overrides
 
 The `metrics` and `logs` keys override the shared settings for one signal only. They accept
-`otlp_endpoint`, `otlp_protocol`, `otlp_headers`, `otlp_timeout` and `exporter`. Setting
-`logs: [exporter: :none]` turns the log handler into a no-op. (For metrics, simply don't start
-`Otelot.MetricExporter`.)
+`otlp_endpoint`, `otlp_protocol`, `otlp_headers`, `otlp_timeout` and `exporter`.
+
+Setting `exporter: :none` disables a signal without having to change your supervision tree
+or logger setup, e.g. to turn off export in dev and test or on some nodes:
+
+* `logs: [exporter: :none]` turns the log handler into a no-op.
+* `metrics: [exporter: :none]` makes `Otelot.MetricExporter.start_link/1` return `:ignore`:
+  no telemetry handlers are attached, nothing is aggregated and nothing is exported. The
+  rest of your supervision tree starts as usual. `otlp_endpoint` is not required in this
+  case.
+
+The same can be done with the `OTEL_LOGS_EXPORTER=none` and `OTEL_METRICS_EXPORTER=none`
+environment variables.
 
 ```elixir
 config :otelot,

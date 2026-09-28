@@ -39,6 +39,44 @@ defmodule Otelot.MetricExporterTest do
       assert Process.alive?(pid)
     end
 
+    test "is ignored when the metrics exporter is set to :none" do
+      Application.put_env(:otelot, :metrics, exporter: :none)
+      on_exit(fn -> Application.delete_env(:otelot, :metrics) end)
+
+      test_event = :"event_#{inspect(self())}"
+      metrics = [Metrics.sum("test.event.value", event_name: [:test, test_event])]
+
+      config =
+        @base_config
+        |> Keyword.delete(:otlp_endpoint)
+        |> Keyword.merge(export_period: 10, metrics: metrics)
+
+      assert :ignore = Otelot.MetricExporter.start_link(config)
+      assert {:ok, :undefined} = start_supervised({Otelot.MetricExporter, config})
+
+      refute Otelot.MetricStore.table_exists?(@name)
+      assert :telemetry.list_handlers([:test, test_event]) == []
+
+      log =
+        capture_log(fn ->
+          :telemetry.execute([:test, test_event], %{value: 42}, %{})
+          # Longer than the export period
+          Process.sleep(50)
+        end)
+
+      assert log == ""
+    end
+
+    test "is ignored when OTEL_METRICS_EXPORTER=none" do
+      System.put_env("OTEL_METRICS_EXPORTER", "none")
+      on_exit(fn -> System.delete_env("OTEL_METRICS_EXPORTER") end)
+
+      metrics = [Metrics.sum("test.event.value")]
+
+      assert :ignore =
+               Otelot.MetricExporter.start_link(@base_config ++ [metrics: metrics])
+    end
+
     test "fails with invalid config" do
       assert {:error, _} = Otelot.MetricExporter.start_link([])
       assert {:error, _} = Otelot.MetricExporter.start_link(otlp_protocol: :invalid)

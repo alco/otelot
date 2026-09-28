@@ -1,22 +1,28 @@
 defmodule Otelot.MixProject do
   use Mix.Project
 
+  @version "0.4.4"
+
   def project do
     [
       app: :otelot,
       name: "Otelot",
-      description: "An unofficial OTel-compatible metric exporter",
-      version: "0.4.4",
+      description:
+        "Export Telemetry.Metrics and Logger events to any OpenTelemetry (OTLP) backend",
+      version: @version,
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       source_url: "https://github.com/alco/otelot",
-      homepage_url: "https://github.com/alco/otelot",
+      homepage_url: "https://hexdocs.pm/otelot",
       deps: deps(),
       docs: &docs/0,
       package: [
         licenses: ["Apache-2.0"],
-        links: %{"GitHub" => "https://github.com/alco/otelot"},
-        files: ~w(lib .formatter.exs mix.exs README.md LICENSE)
+        links: %{
+          "GitHub" => "https://github.com/alco/otelot",
+          "Changelog" => "https://github.com/alco/otelot/blob/main/CHANGELOG.md"
+        },
+        files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
       ],
       preferred_cli_env: [
         "test.watch": :test
@@ -55,7 +61,18 @@ defmodule Otelot.MixProject do
 
   defp docs do
     [
-      main: "Otelot.MetricExporter",
+      main: "readme",
+      source_ref: "v#{@version}",
+      extras: [
+        "README.md",
+        "guides/getting-started.md",
+        "guides/metrics.md",
+        "guides/configuration.md",
+        "CHANGELOG.md"
+      ],
+      groups_for_extras: [
+        Guides: ~r"guides/"
+      ],
       api_reference: false
     ]
   end

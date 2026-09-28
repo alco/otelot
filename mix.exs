@@ -23,9 +23,6 @@ defmodule Otelot.MixProject do
           "Changelog" => "https://github.com/alco/otelot/blob/main/CHANGELOG.md"
         },
         files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
-      ],
-      preferred_cli_env: [
-        "test.watch": :test
       ]
     ]
   end
@@ -56,7 +53,7 @@ defmodule Otelot.MixProject do
   end
 
   def cli do
-    [preffered_envs: ["test.watch": :test]]
+    [preferred_envs: ["test.watch": :test]]
   end
 
   defp docs do

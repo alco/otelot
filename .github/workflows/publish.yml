@@ -6,33 +6,36 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-*"
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     name: Build and publish to Hex.pm
-    runs-on: ubuntu-latest
-    
+    runs-on: ubuntu-24.04
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
+      - uses: actions/checkout@v5
+
+      - uses: erlef/setup-beam@v1
         with:
-          elixir-version: '1.17.1'
-          otp-version: '27.0'
-      
-      - name: Restore dependencies cache
-        uses: actions/cache@v3
-        with:
-          path: deps
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
-      
+          version-type: strict
+          version-file: '.tool-versions'
+
+      - name: Check that the tag matches the version in mix.exs
+        run: |
+          version=$(grep -oP '@version "\K[^"]+' mix.exs)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match mix.exs version $version"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: mix deps.get
-        
+
       - name: Run tests
         run: mix test
-        
+
       - name: Publish to Hex.pm
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}

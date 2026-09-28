@@ -31,8 +31,8 @@ defmodule Otelot.MetricExporter do
 
   Default histogram buckets are `#{inspect(MetricStore.default_buckets())}`
 
-  See all available options in `start_link/2` documentation. Options provided to the `start_link/2`
-  function will be merged with the options provided via `config :otelot` configuraiton.
+  See all available options in `start_link/1` documentation. Options provided to the `start_link/1`
+  function will be merged with the options provided via `config :otelot` configuration.
   """
 
   @type protocol :: :http_protobuf | :http_json
@@ -70,8 +70,9 @@ defmodule Otelot.MetricExporter do
   @type option() :: unquote(NimbleOptions.option_typespec(@options_schema))
 
   @doc """
-  Start the exporter. It maintains some pieces of global state: ets table and a `:persistent_term` key.
-  This means that only one exporter instance can be started at a time.
+  Start the exporter. It maintains some pieces of global state keyed by the `:name` option: a named
+  ETS table and a `:persistent_term` key. To run several exporters at once, give each of them a
+  unique `:name` (and a unique child id when starting them under the same supervisor).
 
   ## Options
 

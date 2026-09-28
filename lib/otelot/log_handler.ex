@@ -8,7 +8,7 @@ defmodule Otelot.LogHandler do
 
       # Add and configure the handler
       config :my_app, :logger, [
-        {:handler, Otelot.LogHandler, :logger_std_h, %{
+        {:handler, :otel, Otelot.LogHandler, %{
           config: %{
             metadata_map: %{
               request_id: "http.request.id"
@@ -32,7 +32,7 @@ defmodule Otelot.LogHandler do
 
   ## Options
 
-  Options starting with `otlp_` and the `resource` option will be take automatically from the `:otelot`
+  Options starting with `otlp_` and the `resource` option will be taken automatically from the `:otelot`
   app configuration, but can be overridden when adding the handler.
 
   #{Otelot.LogAccumulator.options_schema() |> NimbleOptions.docs()}

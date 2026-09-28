@@ -13,9 +13,6 @@ rewriting your instrumentation.
 - **Logs**: a `:logger` handler that batches log events and ships them as OTel log records,
   with trace/span correlation when the official tracing SDK is in use.
 
-Otelot is a fork of [`otel_metric_exporter`](https://github.com/electric-sql/elixir-otel-metric-exporter),
-which was used in production at [Electric](https://electric-sql.com).
-
 ## Installation
 
 ```elixir
@@ -112,4 +109,18 @@ may contain breaking changes, which are always called out in the [changelog](CHA
 
 ## License
 
-Apache 2.0, see [LICENSE](https://github.com/alco/otelot/blob/main/LICENSE).
+Copyright 2026 Oleksii Sholik
+
+Otelot is derived from
+[`otel_metric_exporter`](https://github.com/electric-sql/elixir-otel-metric-exporter),
+copyright 2024–2026 its contributors, which was used in production at
+[Electric](https://electric-sql.com). It has been modified since the fork. Both are
+licensed under the Apache License, Version 2.0 (the "License"); you may not use this
+software except in compliance with the License. You may obtain a copy of the License in
+[LICENSE](https://github.com/alco/otelot/blob/main/LICENSE) or at
+<http://www.apache.org/licenses/LICENSE-2.0>.
+
+Unless required by applicable law or agreed to in writing, software distributed under the
+License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+either express or implied. See the License for the specific language governing permissions
+and limitations under the License.

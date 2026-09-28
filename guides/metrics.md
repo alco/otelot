@@ -15,10 +15,10 @@ trade-offs are listed [below](#differences-from-the-official-opentelemetry-sdk).
 
 | `Telemetry.Metrics`  | OTel data point | Notes |
 | -------------------- | --------------- | ----- |
-| `counter/2`          | Sum, monotonic  | Counts events; the measurement value is ignored. |
-| `sum/2`              | Sum, non-monotonic | Adds up measurement values. |
+| `counter/2`          | Sum, monotonic, delta | Counts events; the measurement value is ignored. |
+| `sum/2`              | Sum, non-monotonic, delta | Adds up measurement values. |
 | `last_value/2`       | Gauge           | Keeps the latest measurement value. |
-| `distribution/2`     | Histogram (explicit buckets) | Count, sum, min, max and per-bucket counts. |
+| `distribution/2`     | Histogram (explicit buckets), delta | Count, sum, min, max and per-bucket counts. |
 | `summary/2`          | —               | Not supported; rejected at startup. |
 
 Integer values are exported as integers and floats as doubles. Integers that don't fit into
@@ -71,6 +71,19 @@ time of the window it covers.
 * Transient HTTP errors (408, 429, 5xx) and connection errors are retried with exponential
   backoff for up to 20 seconds before the attempt is considered failed.
 
+### Aggregation temporality
+
+Because aggregation restarts from zero after every successful export, Sum and Histogram data
+points are exported with **delta** temporality (`AGGREGATION_TEMPORALITY_DELTA`): each data
+point holds only what was recorded between its `start_time_unix_nano` and `time_unix_nano`,
+not a running total since startup. Backends with native delta support (Honeycomb, New Relic,
+Datadog, ...) can ingest these directly.
+
+Cumulative temporality is not currently supported. Prometheus, which only understands
+cumulative counters and histograms, needs the OpenTelemetry Collector's
+[`deltatocumulative`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor)
+processor (or an equivalent) between Otelot and Prometheus.
+
 ## Running several exporters
 
 Each exporter keeps its state in a named ETS table. To run more than one — for example to
@@ -104,6 +117,8 @@ SDK, these are the trade-offs:
 * **No Exemplars.** Otelot does not integrate with `:opentelemetry_api`, so data points
   don't link to traces or spans.
 * **Limited data point types.** `ExponentialHistogram` and `Summary` are not produced.
+* **Delta temporality only.** Sums and histograms are always exported as deltas; see
+  [Aggregation temporality](#aggregation-temporality).
 * **OTLP over HTTP with protobuf only.** gRPC and HTTP/JSON transports are not supported.
 * **In-process aggregation.** Values are aggregated in ETS inside your node. This is cheap on
   the hot path (a few ETS operations per metric per event) but means each node exports its own

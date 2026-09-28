@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+- Sum (`counter/2`, `sum/2`) and Histogram (`distribution/2`) data points are now exported
+  with `AGGREGATION_TEMPORALITY_DELTA` instead of `AGGREGATION_TEMPORALITY_CUMULATIVE`. The
+  values were always per-export deltas (aggregation restarts after each successful export),
+  so the old label made cumulative-aware backends misread them: New Relic dropped them and
+  rate/increase calculations were wrong. Backends that only accept cumulative data, such as
+  Prometheus, now need a delta-to-cumulative conversion (e.g. the OpenTelemetry Collector's
+  `deltatocumulative` processor). See the Metrics guide.
+
 ## [0.5.0] - 2026-09-28
 
 Otelot continues the development of

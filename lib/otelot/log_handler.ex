@@ -41,8 +41,6 @@ defmodule Otelot.LogHandler do
   alias Otelot.LogAccumulator
   alias Otelot.LogHandlerSupervisor
 
-  require Logger
-
   @behaviour :logger_handler
 
   @olp_config_keys [

@@ -1,21 +1,21 @@
-defmodule OtelMetricExporter.MixProject do
+defmodule Otelot.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :otel_metric_exporter,
-      name: "OTel Metric Exporter",
+      app: :otelot,
+      name: "Otelot",
       description: "An unofficial OTel-compatible metric exporter",
       version: "0.4.4",
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
-      source_url: "https://github.com/electric-sql/elixir-otel-metric-exporter",
-      homepage_url: "https://github.com/electric-sql/elixir-otel-metric-exporter",
+      source_url: "https://github.com/alco/otelot",
+      homepage_url: "https://github.com/alco/otelot",
       deps: deps(),
       docs: &docs/0,
       package: [
         licenses: ["Apache-2.0"],
-        links: %{"GitHub" => "https://github.com/electric-sql/elixir-otel-metric-exporter"},
+        links: %{"GitHub" => "https://github.com/alco/otelot"},
         files: ~w(lib .formatter.exs mix.exs README.md LICENSE)
       ],
       preferred_cli_env: [
@@ -28,7 +28,7 @@ defmodule OtelMetricExporter.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {OtelMetricExporter.Application, []}
+      mod: {Otelot.Application, []}
     ]
   end
 
@@ -55,7 +55,7 @@ defmodule OtelMetricExporter.MixProject do
 
   defp docs do
     [
-      main: "OtelMetricExporter",
+      main: "Otelot.MetricExporter",
       api_reference: false
     ]
   end

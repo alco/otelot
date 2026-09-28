@@ -1,0 +1,14 @@
+defmodule Otelot.Application do
+  use Application
+  require Logger
+
+  @impl true
+  def start(_type, _args) do
+    children = [
+      {Finch, name: Otelot.Finch, pools: %{:default => [size: 10, count: 1]}}
+    ]
+
+    opts = [strategy: :one_for_one, name: Otelot.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
+end

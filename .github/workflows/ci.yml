@@ -37,7 +37,7 @@ jobs:
         with:
           path: |
             _build/*/lib
-            !_build/*/lib/otel_metric_exporter
+            !_build/*/lib/otelot
           key: ${{ runner.os }}-build-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-build-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
@@ -78,7 +78,7 @@ jobs:
         with:
           path: |
             _build/*/lib
-            !_build/*/lib/otel_metric_exporter
+            !_build/*/lib/otelot
           key: ${{ runner.os }}-build-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-build-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}

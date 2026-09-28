@@ -133,10 +133,16 @@ defmodule Otelot.OtelApi.Config do
     |> put_from_env("OTEL_SERVICE_NAME", [:resource, "service.name"])
   end
 
+  # Each env var is cast and validated against the options schema on its own, so that a
+  # single invalid or unsupported value is skipped with a warning instead of invalidating
+  # all the other env-derived settings.
   defp put_from_env(acc, env_var, key, cast_fun \\ fn x -> {:ok, x} end) do
+    path = List.wrap(key)
+
     with {:ok, value} <- System.fetch_env(env_var),
-         {:ok, casted} <- cast_fun.(value) do
-      put_in(acc, List.wrap(key), casted)
+         {:ok, casted} <- cast_fun.(value),
+         :ok <- validate_env_value(path, casted) do
+      put_in(acc, path, casted)
     else
       :error ->
         acc
@@ -144,6 +150,15 @@ defmodule Otelot.OtelApi.Config do
       {:error, message} ->
         Logger.warning("Invalid #{env_var} value, ignoring: #{message}")
         acc
+    end
+  end
+
+  defp validate_env_value(path, value) do
+    single_value_config = List.foldr(path, value, fn key, acc -> %{key => acc} end)
+
+    case NimbleOptions.validate(single_value_config, options_schema()) do
+      {:ok, _} -> :ok
+      {:error, error} -> {:error, Exception.message(error)}
     end
   end
 
@@ -190,8 +205,16 @@ defmodule Otelot.OtelApi.Config do
       |> Map.take(Keyword.keys(@public_options))
       |> NimbleOptions.validate(options_schema())
       |> case do
-        {:ok, validated} -> validated
-        {:error, _} -> %{}
+        {:ok, validated} ->
+          validated
+
+        {:error, error} ->
+          # Every env var is validated individually as it's read, so this is not expected.
+          Logger.warning(
+            "Ignoring configuration from environment variables: #{Exception.message(error)}"
+          )
+
+          %{}
       end
 
     from_app =

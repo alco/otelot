@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An `OTEL_*` environment variable with an unsupported value (e.g.
+  `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`) is now ignored with a warning on its own, instead of
+  silently discarding all environment-derived configuration.
+
 ## [0.5.0] - 2026-09-28
 
 Otelot continues the development of

@@ -197,7 +197,9 @@ Within five seconds the collector should print a `demo.event.count` sum metric.
 **Nothing arrives at the backend.**
 Check the application logs for `Failed to export metrics: ...` errors — they include the
 HTTP status or transport error. Remember that `otlp_endpoint` is a base URL: use
-`http://collector:4318`, not `http://collector:4318/v1/metrics`. Also double-check that the
+`http://collector:4318`, not `http://collector:4318/v1/metrics` (only the per-signal
+`metrics: [otlp_endpoint: ...]` / `logs: [otlp_endpoint: ...]` overrides take a full URL, see
+the Configuration guide). Also double-check that the
 endpoint speaks OTLP over **HTTP** (usually port 4318); gRPC endpoints (port 4317) are not
 supported.
 

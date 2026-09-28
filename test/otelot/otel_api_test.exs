@@ -7,6 +7,7 @@ defmodule Otelot.OtelApiTest do
     on_exit(fn ->
       System.delete_env("OTEL_SERVICE_NAME")
       System.delete_env("OTEL_RESOURCE_ATTRIBUTES")
+      System.delete_env("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
     end)
   end
 
@@ -88,6 +89,26 @@ defmodule Otelot.OtelApiTest do
                  },
                  :metrics
                )
+    end
+  end
+
+  describe "send_metrics/2" do
+    test "posts to a signal-specific endpoint without appending the signal path" do
+      bypass = Bypass.open()
+      start_supervised!({Finch, name: OtelApiTestFinch})
+
+      System.put_env(
+        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+        "http://localhost:#{bypass.port}/custom/metrics"
+      )
+
+      Bypass.expect_once(bypass, "POST", "/custom/metrics", fn conn ->
+        Plug.Conn.resp(conn, 200, "")
+      end)
+
+      {:ok, api, %{}} = OtelApi.new(%{finch: OtelApiTestFinch, retry: false}, :metrics)
+
+      assert :ok = OtelApi.send_metrics(api, [])
     end
   end
 end

@@ -1,6 +1,8 @@
 defmodule Otelot.OtelApi.ConfigTest do
   use ExUnit.Case, async: false
 
+  alias Otelot.OtelApi.Config
+
   @touched_envs ~w|OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_PROTOCOL OTEL_EXPORTER_OTLP_HEADERS OTEL_EXPORTER_OTLP_TIMEOUT| ++
                   ~w|OTEL_RESOURCE_ATTRIBUTES OTEL_SERVICE_NAME| ++
                   ~w|OTEL_EXPORTER_OTLP_LOGS_ENDPOINT OTEL_EXPORTER_OTLP_LOGS_PROTOCOL OTEL_EXPORTER_OTLP_LOGS_HEADERS OTEL_EXPORTER_OTLP_LOGS_TIMEOUT| ++
@@ -132,6 +134,63 @@ defmodule Otelot.OtelApi.ConfigTest do
                  %{logs: %{exporter: :otlp}},
                  :logs
                )
+    end
+
+    test "appends the signal path to the generic endpoint from env" do
+      System.put_env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+
+      assert {:ok, %Config{url: "http://localhost:4318/v1/logs"}, %{}} =
+               Config.validate_for_scope(%{}, :logs)
+
+      assert {:ok, %Config{url: "http://localhost:4318/v1/metrics"}, %{}} =
+               Config.validate_for_scope(%{}, :metrics)
+    end
+
+    test "uses signal-specific endpoints from env as-is" do
+      System.put_env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+      System.put_env("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://logs.example.com/custom/logs")
+
+      assert {:ok,
+              %Config{
+                otlp_endpoint: "http://logs.example.com/custom/logs",
+                url: "http://logs.example.com/custom/logs"
+              }, %{}} = Config.validate_for_scope(%{}, :logs)
+
+      assert {:ok, %Config{url: "http://localhost:4318/v1/metrics"}, %{}} =
+               Config.validate_for_scope(%{}, :metrics)
+    end
+
+    test "appends the signal path to the generic endpoint from app config" do
+      Application.put_env(:otelot, :otlp_endpoint, "http://localhost:4318")
+
+      assert {:ok, %Config{url: "http://localhost:4318/v1/metrics"}, %{}} =
+               Config.validate_for_scope(%{}, :metrics)
+    end
+
+    test "uses signal-specific endpoints from app config as-is" do
+      Application.put_env(:otelot, :otlp_endpoint, "http://localhost:4318")
+      Application.put_env(:otelot, :metrics, otlp_endpoint: "http://metrics.example.com/ingest")
+
+      assert {:ok, %Config{url: "http://metrics.example.com/ingest"}, %{}} =
+               Config.validate_for_scope(%{}, :metrics)
+
+      assert {:ok, %Config{url: "http://localhost:4318/v1/logs"}, %{}} =
+               Config.validate_for_scope(%{}, :logs)
+    end
+
+    test "app config signal-specific endpoint wins over the generic env endpoint" do
+      System.put_env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+      Application.put_env(:otelot, :logs, otlp_endpoint: "http://logs.example.com/ingest")
+
+      assert {:ok, %Config{url: "http://logs.example.com/ingest"}, %{}} =
+               Config.validate_for_scope(%{}, :logs)
+    end
+
+    test "treats a directly provided endpoint as a base URL" do
+      System.put_env("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://metrics.example.com/ingest")
+
+      assert {:ok, %Config{url: "http://localhost:4318/v1/metrics"}, %{}} =
+               Config.validate_for_scope(%{otlp_endpoint: "http://localhost:4318"}, :metrics)
     end
 
     test "doesn't return an error if exporter is set to :none" do

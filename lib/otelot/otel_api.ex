@@ -42,20 +42,20 @@ defmodule Otelot.OtelApi do
   def send_log_events(%__MODULE__{config: config} = api, events) do
     events
     |> Protocol.build_log_service_request(config.resource)
-    |> send_proto("/v1/logs", api)
+    |> send_proto(api)
   end
 
   def send_metrics(%__MODULE__{config: config} = api, metrics) do
     metrics
     |> Protocol.build_metric_service_request(config.resource)
-    |> send_proto("/v1/metrics", api)
+    |> send_proto(api)
   end
 
-  @spec send_proto(struct(), String.t(), %__MODULE__{}) :: :ok | {:error, any()}
-  defp send_proto(body, path, %__MODULE__{} = api) do
+  @spec send_proto(struct(), %__MODULE__{}) :: :ok | {:error, any()}
+  defp send_proto(body, %__MODULE__{} = api) do
     body
     |> encode_to_iodata()
-    |> build_finch_request(path, api)
+    |> build_finch_request(api)
     |> make_finch_request(api.finch, with_retry?: api.retry)
   end
 
@@ -73,10 +73,10 @@ defmodule Otelot.OtelApi do
         """
   end
 
-  defp build_finch_request(body, path, %__MODULE__{} = api) do
+  defp build_finch_request(body, %__MODULE__{config: config} = api) do
     Finch.build(
       :post,
-      url(api, path),
+      config.url,
       Map.to_list(headers(api)),
       maybe_compress(body, api)
     )
@@ -132,8 +132,6 @@ defmodule Otelot.OtelApi do
         error
     end
   end
-
-  defp url(%__MODULE__{config: config}, path), do: config.otlp_endpoint <> path
 
   defp headers(%__MODULE__{config: %Config{otlp_compression: compression} = config}) do
     [:content_type, :accept, :compression]

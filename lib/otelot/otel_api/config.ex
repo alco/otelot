@@ -5,6 +5,8 @@ defmodule Otelot.OtelApi.Config do
 
   defstruct [
     :otlp_endpoint,
+    # The full URL requests for the signal are sent to, derived from `otlp_endpoint`
+    :url,
     :otlp_protocol,
     :otlp_headers,
     :otlp_timeout,
@@ -20,7 +22,14 @@ defmodule Otelot.OtelApi.Config do
   endpoint_opt = [
     otlp_endpoint: [
       type: :string,
-      doc: "Endpoint to send data to."
+      doc: "Base URL of the OTLP/HTTP receiver. `/v1/metrics` or `/v1/logs` is appended to it."
+    ]
+  ]
+
+  signal_endpoint_opt = [
+    otlp_endpoint: [
+      type: :string,
+      doc: "Full URL to send this signal's data to. Used as-is, without appending `/v1/<signal>`."
     ]
   ]
 
@@ -54,7 +63,7 @@ defmodule Otelot.OtelApi.Config do
          required: false,
          doc: "Overrides for #{scope}.",
          keys:
-           Enum.map(endpoint_opt ++ otlp_options, fn {key, opts} ->
+           Enum.map(signal_endpoint_opt ++ otlp_options, fn {key, opts} ->
              {key, opts |> Keyword.delete(:default)}
            end) ++ exporter_opt
        ]}
@@ -91,7 +100,8 @@ defmodule Otelot.OtelApi.Config do
                              type: :string,
                              required: true,
                              doc: "Endpoint to send data to."
-                           ]
+                           ],
+                           url: [type: :string]
                          ] ++ otlp_options ++ exporter_opt ++ top_level_opts
                        )
 
@@ -215,7 +225,9 @@ defmodule Otelot.OtelApi.Config do
         defaults
         |> get_for_scope(scope)
         |> Map.merge(
-          Map.update(provided, :resource, %{}, &normalize_resources/1),
+          provided
+          |> Map.update(:resource, %{}, &normalize_resources/1)
+          |> put_signal_url(scope),
           &if(&1 == :resource, do: Map.merge(&2, &3), else: &3)
         )
 
@@ -231,8 +243,25 @@ defmodule Otelot.OtelApi.Config do
     end
   end
 
-  defp get_for_scope(config, scope),
-    do: Map.merge(Map.drop(config, [:logs, :metrics]), config[scope] || %{})
+  # Per the OTel spec, the generic endpoint is a base URL to which the signal path is
+  # appended, while a signal-specific endpoint is used as-is.
+  defp get_for_scope(config, scope) do
+    generic = config |> Map.drop([:logs, :metrics]) |> put_signal_url(scope)
+    specific = Map.new(config[scope] || %{})
+
+    specific =
+      case specific do
+        %{otlp_endpoint: endpoint} -> Map.put(specific, :url, endpoint)
+        _ -> specific
+      end
+
+    Map.merge(generic, specific)
+  end
+
+  defp put_signal_url(%{otlp_endpoint: endpoint} = config, scope) when is_binary(endpoint),
+    do: Map.put(config, :url, endpoint <> "/v1/#{scope}")
+
+  defp put_signal_url(config, _scope), do: config
 
   defp normalize_resources(resource_map), do: Map.new(do_normalize_resources(resource_map))
 

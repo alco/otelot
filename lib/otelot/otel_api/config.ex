@@ -1,4 +1,6 @@
 defmodule Otelot.OtelApi.Config do
+  @moduledoc false
+
   require Logger
 
   defstruct [

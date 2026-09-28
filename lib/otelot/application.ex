@@ -1,4 +1,6 @@
 defmodule Otelot.Application do
+  @moduledoc false
+
   use Application
   require Logger
 

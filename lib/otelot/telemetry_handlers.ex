@@ -1,4 +1,6 @@
 defmodule Otelot.TelemetryHandlers do
+  @moduledoc false
+
   # Simple genserver that handles attaching the handler to the configured metrics
   # Ensures that metrics are attached **after** the MetricStore has started
   # and setup the generation_key system to avoid race conditions where

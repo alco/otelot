@@ -71,12 +71,11 @@ environment variables are honoured too.
 
 Otelot trades API compliance for fitting into the existing Elixir ecosystem:
 
-- Metrics are defined with `Telemetry.Metrics`, not the OTel Metrics API. No Views, no
-  Exemplars, no link to traces.
+- Metrics are defined with `Telemetry.Metrics`, not the OTel Metrics API.
 - `summary` metrics and OTel's `ExponentialHistogram` are not supported.
 - Transport is OTLP over HTTP with protobuf encoding; gRPC and HTTP/JSON are not supported.
-- It doesn't do tracing. Use [`opentelemetry`](https://hex.pm/packages/opentelemetry) for
-  that; the two work fine side by side.
+- To create and export OTel spans, use [`opentelemetry`](https://hex.pm/packages/opentelemetry).
+  The two work fine side by side.
 
 ## Compatibility
 

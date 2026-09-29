@@ -20,6 +20,16 @@ defmodule Otelot.LogHandlerSupervisorTest do
         :test_log_handler_supervisor
       )
 
+    # The supervisor is linked to the test process and shuts down asynchronously once the
+    # test exits. Wait for it to terminate so the next test can reuse its registered name.
+    on_exit(fn ->
+      if pid = Process.whereis(:test_log_handler_supervisor) do
+        ref = Process.monitor(pid)
+        Process.exit(pid, :shutdown)
+        assert_receive {:DOWN, ^ref, :process, ^pid, _}, 15_000
+      end
+    end)
+
     {:ok, %{bypass: bypass, config: config}}
   end
 
@@ -30,10 +40,6 @@ defmodule Otelot.LogHandlerSupervisorTest do
         accumulator_config: config,
         olp_config: %{}
       )
-
-    on_exit(fn ->
-      Process.exit(supervisor_pid, :shutdown)
-    end)
 
     assert Process.alive?(supervisor_pid)
     assert :logger_olp.get_pid(olp) |> Process.alive?()

@@ -10,7 +10,7 @@ defmodule Otelot.MetricStoreTest do
   @default_buckets [0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000]
 
   setup do
-    bypass = Bypass.open()
+    bypass = Passby.open()
     {:ok, _} = start_supervised({Finch, name: TestFinch})
 
     config = %{
@@ -121,8 +121,8 @@ defmodule Otelot.MetricStoreTest do
 
       tags = %{test: "value"}
 
-      Bypass.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
+      Passby.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
+        body = conn.req_body
 
         assert {"content-type", "application/x-protobuf"} in conn.req_headers
         assert {"accept", "application/x-protobuf"} in conn.req_headers
@@ -132,7 +132,7 @@ defmodule Otelot.MetricStoreTest do
         # Decodes withouth raising
         ExportMetricsServiceRequest.decode(body)
 
-        Plug.Conn.resp(conn, 200, "")
+        Passby.resp(conn, 200, "")
       end)
 
       MetricStore.write_metric(@name, metric1, 1, tags)
@@ -162,8 +162,8 @@ defmodule Otelot.MetricStoreTest do
       tags = %{test: "value"}
       start_supervised!({MetricStore, %{config | metrics: [metric_undef, metric_nil]}})
 
-      Bypass.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
+      Passby.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
+        body = conn.req_body
         decoded = ExportMetricsServiceRequest.decode(body)
 
         assert [%{scope_metrics: [%{metrics: exported_metrics}]}] = decoded.resource_metrics
@@ -174,7 +174,7 @@ defmodule Otelot.MetricStoreTest do
           assert point.value == nil
         end)
 
-        Plug.Conn.resp(conn, 200, "")
+        Passby.resp(conn, 200, "")
       end)
 
       # `:telemetry` emits `:undefined` for uninitialised values
@@ -191,8 +191,8 @@ defmodule Otelot.MetricStoreTest do
       tags = %{test: "value"}
       start_supervised!({MetricStore, %{config | metrics: [metric]}})
 
-      Bypass.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
-        Plug.Conn.resp(conn, 500, "Internal Server Error")
+      Passby.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
+        Passby.resp(conn, 500, "Internal Server Error")
       end)
 
       MetricStore.write_metric(@name, metric, 1, tags)
@@ -211,7 +211,7 @@ defmodule Otelot.MetricStoreTest do
       tags = %{test: "value"}
       start_supervised!({MetricStore, %{config | metrics: [metric]}})
 
-      Bypass.down(bypass)
+      Passby.down(bypass)
 
       MetricStore.write_metric(@name, metric, 1, tags)
 
@@ -236,8 +236,8 @@ defmodule Otelot.MetricStoreTest do
       MetricStore.write_metric(@name, metric, 1, tags)
 
       # First export fails
-      Bypass.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
-        Plug.Conn.resp(conn, 500, "Internal Server Error")
+      Passby.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
+        Passby.resp(conn, 500, "Internal Server Error")
       end)
 
       capture_log(fn -> MetricStore.export_sync(@name) end)
@@ -246,8 +246,8 @@ defmodule Otelot.MetricStoreTest do
       MetricStore.write_metric(@name, metric, 2, tags)
 
       # Second export succeeds and should include both generations
-      Bypass.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
+      Passby.expect_once(bypass, "POST", "/v1/metrics", fn conn ->
+        body = conn.req_body
         metrics = ExportMetricsServiceRequest.decode(body)
 
         # Verify that we have one metric with sum = 3 (1 from first generation + 2 from second)
@@ -260,7 +260,7 @@ defmodule Otelot.MetricStoreTest do
         assert point1.time_unix_nano < point2.time_unix_nano
         assert point2.start_time_unix_nano > point1.time_unix_nano
 
-        Plug.Conn.resp(conn, 200, "")
+        Passby.resp(conn, 200, "")
       end)
 
       assert :ok = MetricStore.export_sync(@name)

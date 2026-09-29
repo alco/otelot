@@ -45,7 +45,7 @@ defmodule Otelot.MixProject do
       {:nimble_options, "~> 1.1"},
       {:finch, "~> 0.19"},
       {:retry, "~> 0.19"},
-      {:bypass, "~> 2.1", only: [:test]},
+      {:passby, "~> 0.2", only: [:test]},
       {:opentelemetry, "~> 1.5", only: [:test]},
       {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: [:dev], runtime: false}

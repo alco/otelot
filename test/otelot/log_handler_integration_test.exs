@@ -23,7 +23,7 @@ defmodule Otelot.LogHandlerIntegrationTest do
   setup do
     # Use a unique handler ID for each test run
     handler_id = :"handler_#{System.unique_integer([:positive, :monotonic])}"
-    bypass = Bypass.open()
+    bypass = Passby.open()
 
     config =
       Map.merge(@default_config, %{
@@ -62,14 +62,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
   test "captures Logger.info message", %{bypass: bypass} do
     parent = self()
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     Logger.info("hello info")
@@ -81,14 +81,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
   test "captures Logger.error message with correct severity", %{bypass: bypass} do
     parent = self()
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     Logger.error("hello error")
@@ -108,14 +108,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
     parent = self()
     request_id = "req-12345"
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     Logger.metadata(request_id: request_id)
@@ -140,14 +140,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
     parent = self()
     Process.flag(:trap_exit, true)
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     {:ok, pid} = Task.start_link(fn -> exit(:some_exit_reason) end)
@@ -201,14 +201,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
     parent = self()
     Process.flag(:trap_exit, true)
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     {:ok, pid1} = TestGenserver.start_link(parent)
@@ -251,14 +251,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
     parent = self()
     Process.flag(:trap_exit, true)
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     {:ok, pid} = Task.start_link(fn -> raise RuntimeError, "test error" end)
@@ -291,14 +291,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
     parent = self()
     Process.flag(:trap_exit, true)
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     {:ok, pid} = Task.start_link(fn -> throw(:test_error) end)
@@ -339,14 +339,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
 
     parent = self()
 
-    Bypass.expect(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     Logger.info("batch-1")
@@ -385,14 +385,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
 
     parent = self()
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     Logger.info("debounce log")
@@ -415,14 +415,14 @@ defmodule Otelot.LogHandlerIntegrationTest do
   test ":opentelemetry trace/span is captured correctly", %{bypass: bypass} do
     parent = self()
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       %ExportLogsServiceRequest{resource_logs: [%{scope_logs: [%{log_records: logs}]}]} =
         decode_request_body(body)
 
       send(parent, {:logs, logs})
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     span =

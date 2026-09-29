@@ -7,7 +7,7 @@ defmodule Otelot.LogHandlerSupervisorTest do
   alias Otelot.LogHandlerSupervisor
 
   setup do
-    bypass = Bypass.open()
+    bypass = Passby.open()
 
     {:ok, config} =
       LogAccumulator.check_config(
@@ -20,6 +20,16 @@ defmodule Otelot.LogHandlerSupervisorTest do
         :test_log_handler_supervisor
       )
 
+    # The supervisor is linked to the test process and shuts down asynchronously once the
+    # test exits. Wait for it to terminate so the next test can reuse its registered name.
+    on_exit(fn ->
+      if pid = Process.whereis(:test_log_handler_supervisor) do
+        ref = Process.monitor(pid)
+        Process.exit(pid, :shutdown)
+        assert_receive {:DOWN, ^ref, :process, ^pid, _}, 15_000
+      end
+    end)
+
     {:ok, %{bypass: bypass, config: config}}
   end
 
@@ -30,10 +40,6 @@ defmodule Otelot.LogHandlerSupervisorTest do
         accumulator_config: config,
         olp_config: %{}
       )
-
-    on_exit(fn ->
-      Process.exit(supervisor_pid, :shutdown)
-    end)
 
     assert Process.alive?(supervisor_pid)
     assert :logger_olp.get_pid(olp) |> Process.alive?()
@@ -49,8 +55,8 @@ defmodule Otelot.LogHandlerSupervisorTest do
 
     parent = self()
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       assert {"content-type", "application/x-protobuf"} in conn.req_headers
       assert {"accept", "application/x-protobuf"} in conn.req_headers
@@ -69,7 +75,7 @@ defmodule Otelot.LogHandlerSupervisorTest do
 
       send(parent, :done)
 
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     for i <- 1..5 do
@@ -100,8 +106,8 @@ defmodule Otelot.LogHandlerSupervisorTest do
 
     parent = self()
 
-    Bypass.expect_once(bypass, "POST", "/v1/logs", fn conn ->
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+    Passby.expect_once(bypass, "POST", "/v1/logs", fn conn ->
+      body = conn.req_body
 
       assert {"content-type", "application/x-protobuf"} in conn.req_headers
       assert {"accept", "application/x-protobuf"} in conn.req_headers
@@ -120,7 +126,7 @@ defmodule Otelot.LogHandlerSupervisorTest do
 
       send(parent, :done)
 
-      Plug.Conn.resp(conn, 200, "")
+      Passby.resp(conn, 200, "")
     end)
 
     for i <- 1..5 do

@@ -119,12 +119,23 @@ defmodule Otelot.MetricExporter do
 
   @impl true
   def init(config) do
-    children = [
-      {MetricStore, config},
-      {TelemetryHandlers, config}
-    ]
+    if exporter_disabled?(config) do
+      # With `metrics: [exporter: :none]` there is nothing to export, so don't create the
+      # metric store or attach any telemetry handlers.
+      :ignore
+    else
+      children = [
+        {MetricStore, config},
+        {TelemetryHandlers, config}
+      ]
 
-    Supervisor.init(children, strategy: :rest_for_one)
+      Supervisor.init(children, strategy: :rest_for_one)
+    end
+  end
+
+  # Any validation errors are left for `MetricStore` to report when it starts.
+  defp exporter_disabled?(config) do
+    match?({:ok, %{exporter: :none}, _rest}, OtelApi.Config.validate_for_scope(config, :metrics))
   end
 
   @doc false

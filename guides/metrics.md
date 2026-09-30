@@ -99,6 +99,12 @@ processor or equivalent conversion before ingestion. Gauges (`last_value/2`) are
 [Issue #23](https://github.com/alco/otelot/issues/23) tracks these restrictions and proposes
 optional in-process cumulative aggregation, including per-metric overrides.
 
+## Disabling export
+
+With `config :otelot, metrics: [exporter: :none]` (or `OTEL_METRICS_EXPORTER=none`) you can
+keep `Otelot.MetricExporter` in your supervision tree while turning it off. See
+[Configuration](configuration.md#per-signal-overrides).
+
 ## Running several exporters
 
 Each exporter keeps its state in a named ETS table. To run more than one — for example to

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the start of the export window, which made backends such as Honeycomb treat each gauge
   reading as an accumulation and inflate `INCREASE`/`RATE` results by the number of data
   points per bucket.
+- `config :otelot, metrics: [exporter: :none]` (or `OTEL_METRICS_EXPORTER=none`) no
+  longer crashes the metric export task on every export period.
 
 ## [0.5.0] - 2026-09-28
 

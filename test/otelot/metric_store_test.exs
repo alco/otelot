@@ -198,12 +198,12 @@ defmodule Otelot.MetricStoreTest do
 
       test_pid = self()
 
-      Bypass.expect(bypass, "POST", "/v1/metrics", fn conn ->
-        {:ok, body, conn} = Plug.Conn.read_body(conn)
+      Passby.expect(bypass, "POST", "/v1/metrics", fn conn ->
+        body = conn.req_body
         decoded = ExportMetricsServiceRequest.decode(body)
         assert [%{scope_metrics: [%{metrics: exported_metrics}]}] = decoded.resource_metrics
         send(test_pid, {:exported, Map.new(exported_metrics, &{&1.name, &1.data})})
-        Plug.Conn.resp(conn, 200, "")
+        Passby.resp(conn, 200, "")
       end)
 
       write_all = fn ->

@@ -224,6 +224,45 @@ defmodule Otelot.MetricStoreTest do
       assert MetricStore.get_metrics(@name, 0) == metrics
     end
 
+    test "gives up on a hung server after otlp_timeout", %{store_config: config} do
+      # A bare TCP server that accepts connections but never responds
+      {:ok, listen} = :gen_tcp.listen(0, [:binary, active: true, reuseaddr: true])
+      {:ok, port} = :inet.port(listen)
+
+      start_supervised!(
+        {Task,
+         fn ->
+           Stream.repeatedly(fn -> :gen_tcp.accept(listen) end) |> Enum.to_list()
+         end},
+        id: :unresponsive_server
+      )
+
+      metric = Metrics.sum("test.sum")
+      tags = %{test: "value"}
+
+      start_supervised!(
+        {MetricStore,
+         %{
+           config
+           | metrics: [metric],
+             otlp_endpoint: "http://localhost:#{port}"
+         }
+         |> Map.put(:otlp_timeout, 200)}
+      )
+
+      MetricStore.write_metric(@name, metric, 1, tags)
+      metrics = MetricStore.get_metrics(@name)
+
+      {elapsed, log} =
+        :timer.tc(fn -> capture_log(fn -> MetricStore.export_sync(@name) end) end, :millisecond)
+
+      assert log =~ "Failed to export metrics"
+      assert elapsed < 1_000
+
+      # Verify metrics were not cleared due to error
+      assert MetricStore.get_metrics(@name, 0) == metrics
+    end
+
     test "preserves metrics across generations on failed exports", %{
       bypass: bypass,
       store_config: config

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `otlp_timeout` (and `OTEL_EXPORTER_OTLP_TIMEOUT`) now takes effect. It bounds the whole
+  export of a batch, retries included, as the OTel specification prescribes: each HTTP
+  request gets the remaining time as its timeout and retries stop once the next backoff
+  delay would run past it. Previously the option was ignored: requests used Finch's default
+  timeouts, retries went on for up to 20 seconds and the metrics export task was killed
+  after a hard-coded 20 seconds.
+
 ## [0.5.0] - 2026-09-28
 
 Otelot continues the development of

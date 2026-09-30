@@ -18,6 +18,7 @@ instance, set `service.name` globally and add an extra resource attribute for on
 | `otlp_endpoint` | — (required) | Base URL of the OTLP/HTTP receiver. `/v1/metrics` and `/v1/logs` are appended to it. |
 | `otlp_protocol` | `:http_protobuf` | Only `:http_protobuf` is supported. |
 | `otlp_headers` | `%{}` | Extra HTTP headers, typically for authentication. |
+| `otlp_timeout` | `10_000` | Maximum time in milliseconds to spend exporting one batch, retries included. |
 | `otlp_compression` | `:gzip` | `:gzip` or `nil`. |
 | `otlp_concurrent_requests` | `10` | Maximum number of in-flight requests (used by the log handler). |
 | `resource` | `%{}` | Resource attributes. Nested maps are flattened into dotted keys. |

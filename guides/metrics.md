@@ -76,13 +76,27 @@ time of the window it covers.
 Because aggregation restarts from zero after every successful export, Sum and Histogram data
 points are exported with **delta** temporality (`AGGREGATION_TEMPORALITY_DELTA`): each data
 point holds only what was recorded between its `start_time_unix_nano` and `time_unix_nano`,
-not a running total since startup. Backends with native delta support (Honeycomb, New Relic,
-Datadog, ...) can ingest these directly.
+not a running total since startup.
 
-Cumulative temporality is not currently supported. Prometheus, which only understands
-cumulative counters and histograms, needs the OpenTelemetry Collector's
+### Destination compatibility
+
+Otelot currently exports only delta sums and histograms. Compatibility depends on the
+metric type, destination version and ingestion path:
+
+| Destination or path | Compatibility |
+| ------------------- | ------------- |
+| [Prometheus OTLP receiver](https://prometheus.io/docs/prometheus/latest/feature_flags/#otlp-delta-conversion) | Drops delta metrics by default. Enable `otlp-deltatocumulative` for built-in conversion, or use the experimental native delta support where available. |
+| [Mimir OTLP endpoint](https://grafana.com/docs/mimir/latest/configure/configuration-parameters/) | Rejects delta metrics by default. Native delta ingestion is experimental and opt-in (`-distributor.otel-native-delta-ingestion`). |
+| [Collector Prometheus remote write exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/prometheusremotewriteexporter/README.md) | Drops delta monotonic sums and histograms. Convert before this exporter when sending to Cortex, Mimir, Thanos or other remote write destinations. |
+| [New Relic](https://docs.newrelic.com/docs/opentelemetry/best-practices/opentelemetry-best-practices-metrics/#otlp-sum-metrics) | Accepts delta counters and histograms, but rejects non-monotonic delta sums (`sum/2`); these require cumulative conversion. |
+| [VictoriaMetrics](https://docs.victoriametrics.com/victoriametrics/integrations/opentelemetry/#delta-temporality) | Accepts raw deltas from v1.132.0, using queries such as `sum_over_time()` and `rate_over_sum()`. Recommends cumulative data or conversion; avoid deduplication and downsampling of raw deltas. |
+| [Datadog direct OTLP metrics endpoint](https://docs.datadoghq.com/opentelemetry/setup/otlp_ingest/metrics/) | Requires delta temporality for sums and histograms. |
+
+For paths requiring cumulative data, use the Collector's
 [`deltatocumulative`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor)
-processor (or an equivalent) between Otelot and Prometheus.
+processor or equivalent conversion before ingestion. Gauges (`last_value/2`) are unaffected.
+[Issue #23](https://github.com/alco/otelot/issues/23) tracks these restrictions and proposes
+optional in-process cumulative aggregation, including per-metric overrides.
 
 ## Running several exporters
 

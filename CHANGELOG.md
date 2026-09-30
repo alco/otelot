@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Sums (`counter/2`, `sum/2`) and histograms (`distribution/2`) now report delta
+  temporality instead of cumulative. Exported values and aggregation behavior are
+  unchanged: each export contains per-window deltas. Some destinations require conversion;
+  see [destination compatibility](guides/metrics.md#destination-compatibility).
+
 ## [0.5.0] - 2026-09-28
 
 Otelot continues the development of

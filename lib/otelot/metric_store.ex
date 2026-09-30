@@ -297,7 +297,7 @@ defmodule Otelot.MetricStore do
              value: convert_value(value, :int)
            }
          end),
-       aggregation_temporality: :AGGREGATION_TEMPORALITY_CUMULATIVE,
+       aggregation_temporality: :AGGREGATION_TEMPORALITY_DELTA,
        is_monotonic: true
      }}
   end
@@ -314,7 +314,7 @@ defmodule Otelot.MetricStore do
              value: convert_value(value, :int)
            }
          end),
-       aggregation_temporality: :AGGREGATION_TEMPORALITY_CUMULATIVE,
+       aggregation_temporality: :AGGREGATION_TEMPORALITY_DELTA,
        is_monotonic: false
      }}
   end
@@ -367,7 +367,7 @@ defmodule Otelot.MetricStore do
              max: max_value && max_value / 1
            }
          end),
-       aggregation_temporality: :AGGREGATION_TEMPORALITY_CUMULATIVE
+       aggregation_temporality: :AGGREGATION_TEMPORALITY_DELTA
      }}
   end
 

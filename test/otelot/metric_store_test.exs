@@ -186,6 +186,61 @@ defmodule Otelot.MetricStoreTest do
       assert :ok = MetricStore.export_sync(@name)
     end
 
+    test "exports sums and histograms with delta temporality", %{
+      bypass: bypass,
+      store_config: config
+    } do
+      counter = Metrics.counter("test.counter")
+      sum = Metrics.sum("test.sum")
+      distribution = Metrics.distribution("test.distribution")
+      tags = %{test: "value"}
+      start_supervised!({MetricStore, %{config | metrics: [counter, sum, distribution]}})
+
+      test_pid = self()
+
+      Passby.expect(bypass, "POST", "/v1/metrics", fn conn ->
+        body = conn.req_body
+        decoded = ExportMetricsServiceRequest.decode(body)
+        assert [%{scope_metrics: [%{metrics: exported_metrics}]}] = decoded.resource_metrics
+        send(test_pid, {:exported, Map.new(exported_metrics, &{&1.name, &1.data})})
+        Passby.resp(conn, 200, "")
+      end)
+
+      write_all = fn ->
+        MetricStore.write_metric(@name, counter, 1, tags)
+        MetricStore.write_metric(@name, sum, 5, tags)
+        MetricStore.write_metric(@name, distribution, 7, tags)
+      end
+
+      # Two consecutive exports of the same measurements: each export must
+      # carry only the values recorded in its own window, labelled as delta.
+      for _ <- 1..2 do
+        write_all.()
+        assert :ok = MetricStore.export_sync(@name)
+        assert_receive {:exported, exported}
+
+        assert {:sum,
+                %{
+                  aggregation_temporality: :AGGREGATION_TEMPORALITY_DELTA,
+                  is_monotonic: true,
+                  data_points: [%{value: {:as_int, 1}}]
+                }} = exported["test.counter"]
+
+        assert {:sum,
+                %{
+                  aggregation_temporality: :AGGREGATION_TEMPORALITY_DELTA,
+                  is_monotonic: false,
+                  data_points: [%{value: {:as_int, 5}}]
+                }} = exported["test.sum"]
+
+        assert {:histogram,
+                %{
+                  aggregation_temporality: :AGGREGATION_TEMPORALITY_DELTA,
+                  data_points: [%{count: 1, sum: 7.0}]
+                }} = exported["test.distribution"]
+      end
+    end
+
     test "handles server errors gracefully", %{bypass: bypass, store_config: config} do
       metric = Metrics.sum("test.sum")
       tags = %{test: "value"}

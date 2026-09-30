@@ -124,9 +124,7 @@ defmodule Otelot.LogAccumulator do
   def handle_info({ref, result}, state)
       when is_map_key(state.pending_tasks, ref) do
     if match?({:error, _}, result) do
-      Logger.debug(
-        "Error sending logs to #{state.api.config.otlp_endpoint}: #{inspect(elem(result, 1))}"
-      )
+      Logger.debug("Error sending logs to #{state.api.config.url}: #{inspect(elem(result, 1))}")
     end
 
     # Remove the task from the pending tasks map

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+- Signal-specific endpoints are now used as-is, as the OTel specification requires:
+  `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` and
+  `otlp_endpoint` under the `metrics` / `logs` keys of `config :otelot` no longer get
+  `/v1/metrics` or `/v1/logs` appended. If you set any of them, add the path yourself (e.g.
+  `https://collector:4318/v1/metrics`). The shared `otlp_endpoint` /
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, and an `otlp_endpoint` passed directly to an exporter or log
+  handler, are still base URLs.
+
 ## [0.5.0] - 2026-09-28
 
 Otelot continues the development of

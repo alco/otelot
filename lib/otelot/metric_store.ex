@@ -22,9 +22,49 @@ defmodule Otelot.MetricStore do
 
   @default_buckets [0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000]
 
+  # Generations
+  #
+  # Metric rows are keyed by `{generation, ...}`. On every export the store bumps the current
+  # generation, waits for writers still inside the previous one to finish, then exports and
+  # deletes every generation up to the previous one.
+  #
+  # The current generation and the number of writers inside each generation live in a
+  # per-store `:atomics` array whose reference is kept in a single row of the store's own
+  # metrics table. Nothing is written to `:persistent_term`, so exports do not trigger global
+  # `persistent_term` updates, and stores do not interfere with each other.
+  #
+  # A writer enters a generation by incrementing that generation's writers counter and then
+  # re-reading the current generation. If the generation has changed in the meantime, it backs
+  # off and retries with the new one. The exporter bumps the generation first and only then
+  # waits for the writers counter of the old generation to drop to zero. Because all atomics
+  # operations are mutually ordered, a writer either sees the new generation (and moves on to
+  # it), or its increment is seen by the exporter, which then waits for its write to complete.
+  # No write can land in a generation after it has been drained.
+  #
+  # Writers counters are indexed by the generation's parity: once the exporter is done with
+  # generation N, no writer can enter it any more, so its counter is reused for N + 2.
+
+  # The key is an atom, so this row never matches the `{generation, ...}` patterns of metric rows
+  @counters_key :"$otelot_generation_counters"
+  @generation_ix 1
+  @writers_ix_base 2
+
+  # How long the exporter waits for writers to leave a generation before giving up on them.
+  # Writers only spend a few ETS operations inside a generation, so this is only reached if a
+  # writer process is killed mid-write.
+  @writers_wait_ms 1_000
+
   defmodule State do
     @moduledoc false
-    defstruct [:config, :api, :metrics, :metrics_table, :last_export, :generations_table]
+    defstruct [
+      :config,
+      :api,
+      :metrics,
+      :metrics_table,
+      :last_export,
+      :generations_table,
+      :counters
+    ]
 
     @type t :: %__MODULE__{
             config: map(),
@@ -32,6 +72,7 @@ defmodule Otelot.MetricStore do
             metrics: list(),
             metrics_table: atom(),
             generations_table: :ets.tid(),
+            counters: :atomics.atomics_ref(),
             last_export: nil | DateTime.t()
           }
   end
@@ -44,7 +85,7 @@ defmodule Otelot.MetricStore do
   end
 
   def get_metrics(metrics_table, generation \\ nil) do
-    generation = generation || :persistent_term.get(generation_key(metrics_table))
+    generation = generation || current_generation(metrics_table)
 
     :ets.match_object(metrics_table, {{generation, :_, :_, :_, :_}, :_, :_})
     |> Enum.reduce(%{}, fn
@@ -67,6 +108,42 @@ defmodule Otelot.MetricStore do
     end)
   end
 
+  defp current_generation(metrics_table) do
+    metrics_table
+    |> :ets.lookup_element(@counters_key, 2)
+    |> :atomics.get(@generation_ix)
+  end
+
+  @doc false
+  # Calls `fun` with the current generation. The generation is guaranteed not to be exported
+  # and drained until `fun` returns, so `fun` may safely write metric rows for it.
+  def in_generation(metrics_table, fun) do
+    counters = :ets.lookup_element(metrics_table, @counters_key, 2)
+    {generation, writers_ix} = enter_generation(counters)
+
+    try do
+      fun.(generation)
+    after
+      :atomics.sub(counters, writers_ix, 1)
+    end
+  end
+
+  defp enter_generation(counters) do
+    generation = :atomics.get(counters, @generation_ix)
+    ix = writers_ix(generation)
+    :atomics.add(counters, ix, 1)
+
+    if :atomics.get(counters, @generation_ix) == generation do
+      {generation, ix}
+    else
+      # The generation was rotated between the two reads; retry with the new one
+      :atomics.sub(counters, ix, 1)
+      enter_generation(counters)
+    end
+  end
+
+  defp writers_ix(generation), do: @writers_ix_base + rem(generation, 2)
+
   def export_sync(name) do
     GenServer.call(name, :export_sync, :infinity)
   end
@@ -79,29 +156,45 @@ defmodule Otelot.MetricStore do
   def write_metric(metrics_table, metric, value, tags),
     do: write_metric(metrics_table, metric, Enum.join(metric.name, "."), value, tags)
 
-  def write_metric(metrics_table, %Metrics.Counter{} = metric, string_name, _, tags) do
-    generation = :persistent_term.get(generation_key(metrics_table))
+  def write_metric(metrics_table, metric, string_name, value, tags) do
+    in_generation(metrics_table, fn generation ->
+      write_metric(metrics_table, generation, metric, string_name, value, tags)
+    end)
+  end
+
+  defp write_metric(metrics_table, generation, %Metrics.Counter{} = metric, string_name, _, tags) do
     ets_key = {generation, string_name, metric_type(metric), tags, nil}
 
     :ets.update_counter(metrics_table, ets_key, 1, {ets_key, 0, nil})
   end
 
-  def write_metric(metrics_table, %Metrics.Sum{} = metric, string_name, value, tags) do
-    generation = :persistent_term.get(generation_key(metrics_table))
+  defp write_metric(metrics_table, generation, %Metrics.Sum{} = metric, string_name, value, tags) do
     ets_key = {generation, string_name, metric_type(metric), tags, nil}
 
     :ets.update_counter(metrics_table, ets_key, value, {ets_key, 0, nil})
   end
 
-  def write_metric(metrics_table, %Metrics.LastValue{} = metric, string_name, value, tags) do
-    generation = :persistent_term.get(generation_key(metrics_table))
+  defp write_metric(
+         metrics_table,
+         generation,
+         %Metrics.LastValue{} = metric,
+         string_name,
+         value,
+         tags
+       ) do
     ets_key = {generation, string_name, metric_type(metric), tags, nil}
     :ets.update_element(metrics_table, ets_key, {2, value}, {ets_key, value, nil})
   end
 
-  def write_metric(metrics_table, %Metrics.Distribution{} = metric, string_name, value, tags) do
+  defp write_metric(
+         metrics_table,
+         generation,
+         %Metrics.Distribution{} = metric,
+         string_name,
+         value,
+         tags
+       ) do
     bucket = find_bucket(metric, value)
-    generation = :persistent_term.get(generation_key(metrics_table))
     ets_key = {generation, string_name, metric_type(metric), tags, bucket}
     update_counter_op = {2, 1}
     update_sum_op = {3, round(value)}
@@ -169,9 +262,11 @@ defmodule Otelot.MetricStore do
     # Create ETS table for metrics
     :ets.new(metrics_table, [:ordered_set, :public, :named_table, {:write_concurrency, true}])
 
+    counters = :atomics.new(@writers_ix_base + 1, signed: true)
+    :ets.insert(metrics_table, {@counters_key, counters, nil})
+
     generations_table = :ets.new(:generations, [:ordered_set, :private])
     :ets.insert(generations_table, {0, System.system_time(:nanosecond), 0})
-    :persistent_term.put(generation_key(metrics_table), 0)
 
     with {:ok, api, config} <- OtelApi.new(Map.put(config, :finch, finch_pool), :metrics) do
       {:ok,
@@ -180,7 +275,8 @@ defmodule Otelot.MetricStore do
          api: api,
          metrics: metrics,
          metrics_table: metrics_table,
-         generations_table: generations_table
+         generations_table: generations_table,
+         counters: counters
        }}
     end
   end
@@ -208,9 +304,9 @@ defmodule Otelot.MetricStore do
     {:noreply, state}
   end
 
-  defp rotate_generation(%State{} = state) do
-    current_gen = :persistent_term.get(generation_key(state.metrics_table))
-    :persistent_term.put(generation_key(state.metrics_table), current_gen + 1)
+  defp rotate_generation(%State{counters: counters} = state) do
+    current_gen = :atomics.add_get(counters, @generation_ix, 1) - 1
+    await_writers(counters, writers_ix(current_gen), @writers_wait_ms)
 
     :ets.update_element(
       state.generations_table,
@@ -221,6 +317,24 @@ defmodule Otelot.MetricStore do
     :ets.insert(state.generations_table, {current_gen + 1, System.system_time(:nanosecond), nil})
 
     current_gen
+  end
+
+  defp await_writers(counters, ix, attempts_left) do
+    cond do
+      :atomics.get(counters, ix) == 0 ->
+        :ok
+
+      attempts_left == 0 ->
+        Logger.warning(
+          "Otelot.MetricStore gave up waiting for metric writers to leave the exported generation"
+        )
+
+        :atomics.put(counters, ix, 0)
+
+      true ->
+        Process.sleep(1)
+        await_writers(counters, ix, attempts_left - 1)
+    end
   end
 
   defp export_metrics(%State{} = state) do
@@ -404,8 +518,4 @@ defmodule Otelot.MetricStore do
   defp convert_value(bigint_or_float, _preferred_type)
        when is_integer(bigint_or_float) or is_float(bigint_or_float),
        do: {:as_double, bigint_or_float / 1}
-
-  defp generation_key(metrics_table) do
-    {__MODULE__, metrics_table, :generation}
-  end
 end

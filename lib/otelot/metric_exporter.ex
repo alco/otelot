@@ -70,9 +70,9 @@ defmodule Otelot.MetricExporter do
   @type option() :: unquote(NimbleOptions.option_typespec(@options_schema))
 
   @doc """
-  Start the exporter. It maintains some pieces of global state keyed by the `:name` option: a named
-  ETS table and a `:persistent_term` key. To run several exporters at once, give each of them a
-  unique `:name` (and a unique child id when starting them under the same supervisor).
+  Start the exporter. It keeps its metrics in a named ETS table called after the `:name` option.
+  To run several exporters at once, give each of them a unique `:name` (and a unique child id when
+  starting them under the same supervisor).
 
   ## Options
 

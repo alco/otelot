@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The metrics store no longer writes to `:persistent_term` on every export. With a few hundred
+  exporters on one node, those node-wide updates could stall exports and anything else that
+  touches `:persistent_term`. Each store now keeps its generation counter in an `:atomics`
+  array referenced from its own ETS table.
+- Metric writes racing with an export are no longer lost: an export now waits for writers that
+  are still recording into the generation being exported.
+
 ## [0.5.0] - 2026-09-28
 
 Otelot continues the development of

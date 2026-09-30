@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   temporality instead of cumulative. Exported values and aggregation behavior are
   unchanged: each export contains per-window deltas. Some destinations require conversion;
   see [destination compatibility](guides/metrics.md#destination-compatibility).
+- Gauge data points (from `last_value` metrics) no longer carry a start time. It was set to
+  the start of the export window, which made backends such as Honeycomb treat each gauge
+  reading as an accumulation and inflate `INCREASE`/`RATE` results by the number of data
+  points per bucket.
 
 ## [0.5.0] - 2026-09-28
 

@@ -2,6 +2,7 @@ defmodule Otelot.MetricExporterTest do
   use ExUnit.Case
   alias Telemetry.Metrics
   import ExUnit.CaptureLog
+  require Logger
 
   setup do
     on_exit(fn ->
@@ -182,4 +183,95 @@ defmodule Otelot.MetricExporterTest do
       refute log =~ "[:test, #{inspect(test_event)}]} has failed and has been detached."
     end
   end
+
+  describe "invalid measurements" do
+    for type <- [:sum, :last_value, :distribution],
+        {label, measurements} <- [
+          {"missing", quote(do: %{other: 1})},
+          {"nil", quote(do: %{value: nil, other: 1})},
+          {"undefined", quote(do: %{value: :undefined, other: 1})},
+          {"non-numeric", quote(do: %{value: "abc", other: 1})}
+        ] do
+      test "#{type}: a #{label} measurement is skipped without detaching the handler" do
+        event = [:test, :"event_#{System.unique_integer([:positive])}"]
+
+        metrics = [
+          apply(Metrics, unquote(type), ["test.bad.value", [event_name: event]]),
+          Metrics.counter("test.good.count", event_name: event, measurement: :other)
+        ]
+
+        start_supervised!({Otelot.MetricExporter, @base_config ++ [metrics: metrics]})
+
+        log =
+          capture_log(fn ->
+            :telemetry.execute(event, unquote(measurements), %{})
+            :telemetry.execute(event, unquote(measurements), %{})
+            Logger.flush()
+          end)
+
+        refute log =~ "has been detached"
+        assert [_] = :telemetry.list_handlers(event)
+
+        assert [_] =
+                 Regex.scan(~r/Otelot.MetricExporter skipped an invalid measurement/, log)
+
+        assert log =~ "test.bad.value"
+
+        :telemetry.execute(event, %{value: 5, other: 1}, %{})
+
+        metrics = Otelot.MetricStore.get_metrics(@name)
+        assert %{%{} => 3} = metrics[{:counter, "test.good.count"}]
+        assert metrics[{unquote(type), "test.bad.value"}] |> Map.fetch!(%{}) |> recorded_once?()
+      end
+    end
+
+    test "a counter counts events regardless of the measurement" do
+      event = [:test, :"event_#{System.unique_integer([:positive])}"]
+      metrics = [Metrics.counter("test.count", event_name: event, measurement: :value)]
+
+      start_supervised!({Otelot.MetricExporter, @base_config ++ [metrics: metrics]})
+
+      :telemetry.execute(event, %{}, %{})
+      :telemetry.execute(event, %{value: nil}, %{})
+
+      assert %{{:counter, "test.count"} => %{%{} => 2}} = Otelot.MetricStore.get_metrics(@name)
+    end
+
+    test "a metric that fails to record does not affect other metrics on the same event" do
+      event = [:test, :"event_#{System.unique_integer([:positive])}"]
+
+      metrics = [
+        Metrics.sum("test.raising.value",
+          event_name: event,
+          measurement: fn _ -> raise "boom" end
+        ),
+        Metrics.counter("test.good.count", event_name: event, measurement: :other)
+      ]
+
+      start_supervised!({Otelot.MetricExporter, @base_config ++ [metrics: metrics]})
+
+      log =
+        capture_log(fn ->
+          :telemetry.execute(event, %{other: 1}, %{})
+          :telemetry.execute(event, %{other: 1}, %{})
+          Logger.flush()
+        end)
+
+      refute log =~ "has been detached"
+      assert [_] = :telemetry.list_handlers(event)
+      assert [_] = Regex.scan(~r/Otelot.MetricExporter failed to record metric/, log)
+      assert log =~ "boom"
+
+      assert %{{:counter, "test.good.count"} => %{%{} => 2}} =
+               Otelot.MetricStore.get_metrics(@name)
+    end
+  end
+
+  # Only the valid event at the end of each test has been recorded
+  defp recorded_once?(5), do: true
+
+  defp recorded_once?(%{} = buckets),
+    do: buckets |> Map.drop([:min, :max]) |> Map.values() == [{1, 5}]
+
+  defp recorded_once?(_), do: false
 end

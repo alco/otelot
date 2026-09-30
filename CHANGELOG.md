@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An event that lacked the measurement for a `sum` or `distribution` metric, or carried a
+  `nil` or non-numeric value for it, made the telemetry handler raise, and `:telemetry`
+  permanently detached it, silently stopping every metric attached to that event until the
+  exporter restarted. Such measurements are now skipped with a one-time warning per metric,
+  and a metric that fails to record no longer affects the other metrics on the same event.
+  Non-numeric `last_value` measurements are skipped too; previously they crashed the next
+  export, losing all buffered metrics.
+
 ## [0.5.0] - 2026-09-28
 
 Otelot continues the development of

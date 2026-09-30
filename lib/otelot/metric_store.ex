@@ -116,6 +116,13 @@ defmodule Otelot.MetricStore do
     update_min_max(metrics_table, {generation, string_name, metric_type(metric), tags}, value)
   end
 
+  # Returns true only the first time it is called with a given key for the lifetime of the
+  # metrics table. Used to log a warning once instead of on every event. The key has a shape
+  # that the generation-based match patterns used for reading and exporting metrics never match.
+  def first_warning?(metrics_table, key) do
+    :ets.insert_new(metrics_table, {{:warned, key}, nil, nil})
+  end
+
   def table_exists?(metrics_table) do
     case :ets.whereis(metrics_table) do
       :undefined -> false

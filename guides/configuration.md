@@ -60,10 +60,9 @@ Otelot reads the following
 | `OTEL_RESOURCE_ATTRIBUTES` | `resource` (`key1=value1,key2=value2`) |
 | `OTEL_SERVICE_NAME` | the `service.name` resource attribute |
 
-Two deviations from the OTel specification to be aware of:
+Signal-specific endpoints (`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, ...) deviate from the OTel
+specification: they are treated as base URLs, same as the generic one, so the `/v1/<signal>`
+path is still appended.
 
-* Signal-specific endpoints (`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, ...) are treated as base
-  URLs, same as the generic one, so the `/v1/<signal>` path is still appended.
-* Malformed values are skipped with a warning, but a well-formed value that Otelot doesn't
-  support — e.g. `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` — causes *all* environment-derived
-  settings to be ignored.
+A variable with a malformed or unsupported value — e.g. `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` —
+is ignored with a logged warning; all other environment variables still apply.

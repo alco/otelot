@@ -1,6 +1,8 @@
 defmodule Otelot.OtelApi.ConfigTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   @touched_envs ~w|OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_PROTOCOL OTEL_EXPORTER_OTLP_HEADERS OTEL_EXPORTER_OTLP_TIMEOUT| ++
                   ~w|OTEL_RESOURCE_ATTRIBUTES OTEL_SERVICE_NAME| ++
                   ~w|OTEL_EXPORTER_OTLP_LOGS_ENDPOINT OTEL_EXPORTER_OTLP_LOGS_PROTOCOL OTEL_EXPORTER_OTLP_LOGS_HEADERS OTEL_EXPORTER_OTLP_LOGS_TIMEOUT| ++
@@ -69,6 +71,35 @@ defmodule Otelot.OtelApi.ConfigTest do
                   otlp_timeout: 10000,
                   otlp_endpoint: "http://localhost:4317"
                 }}
+    end
+
+    test "skips an env var with an unsupported value and keeps the other env settings" do
+      System.put_env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+      System.put_env("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+      System.put_env("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
+      System.put_env("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "key1=value1")
+      System.put_env("OTEL_SERVICE_NAME", "my-service")
+
+      {result, log} = with_log(fn -> Otelot.OtelApi.Config.defaults() end)
+
+      assert result ==
+               {:ok,
+                %{
+                  logs: %{exporter: :otlp},
+                  metrics: %{exporter: :otlp, otlp_headers: %{"key1" => "value1"}},
+                  otlp_compression: :gzip,
+                  otlp_concurrent_requests: 10,
+                  resource: %{"service.name" => "my-service"},
+                  otlp_headers: %{},
+                  otlp_protocol: :http_protobuf,
+                  otlp_timeout: 10000,
+                  otlp_endpoint: "http://localhost:4317"
+                }}
+
+      assert log =~ "OTEL_EXPORTER_OTLP_PROTOCOL"
+      assert log =~ ":grpc"
+      assert log =~ "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"
+      assert log =~ ":http_json"
     end
 
     test "can be set by application config that overrides env vars" do
